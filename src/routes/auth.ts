@@ -8,7 +8,8 @@ import {
 } from "../auth/passwords.ts";
 import {
   createPasswordResetToken,
-  findPasswordResetToken,
+  validatePasswordResetToken,
+  resetPasswordWithToken
 } from "../auth/passwordResetTokens.ts";
 import {
   clearSessionCookie,
@@ -38,7 +39,6 @@ import {
   findUserById,
   getTotpSecret,
   normalizeEmail,
-  updateUserPassword,
 } from "../auth/users.ts";
 import {
   renderLoginPage,
@@ -430,9 +430,8 @@ export function createAuthRouter(deps: Dependencies): Router {
 
   router.get("/password-reset/:token", (req, res) => {
     const token = String(req.params.token ?? "");
-    const resetToken = findPasswordResetToken(db, token);
-
-    if (!resetToken) {
+    const validToken = validatePasswordResetToken(db, token);
+    if (!validToken) {
       res
         .status(404)
         .type("html")
@@ -448,9 +447,9 @@ export function createAuthRouter(deps: Dependencies): Router {
   router.post("/password-reset/:token", async (req, res) => {
     const token = String(req.params.token ?? "");
     const password = String(req.body.password ?? "");
-    const resetToken = findPasswordResetToken(db, token);
+    const validToken = validatePasswordResetToken(db, token);
 
-    if (!resetToken) {
+    if (!validToken) {
       res
         .status(404)
         .type("html")
@@ -460,7 +459,7 @@ export function createAuthRouter(deps: Dependencies): Router {
       return;
     }
 
-    const user = findUserById(db, resetToken.user_id);
+    const user = findUserById(db, validToken.user_id);
     if (!user) {
       res
         .status(404)
@@ -496,7 +495,7 @@ export function createAuthRouter(deps: Dependencies): Router {
     }
 
     const passwordHash = await hashPassword(password);
-    const passwordResetSucceeded = true;
+    const passwordResetSucceeded = resetPasswordWithToken(db, token, passwordHash);
     if (!passwordResetSucceeded) {
       res
         .status(404)
@@ -506,8 +505,6 @@ export function createAuthRouter(deps: Dependencies): Router {
         );
       return;
     }
-
-    await updateUserPassword(db, user.id, passwordHash);
 
     res.type("html").send(renderPasswordResetCompletePage(user.email));
   });
